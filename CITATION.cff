@@ -1,0 +1,40 @@
+cff-version: 1.2.0
+message: "If you use this code, please cite the associated article."
+title: "Hybrid Autoencoder-Based Feature Learning and XGBoost Framework for Diabetic Retinopathy Classification — reproducibility code"
+type: software
+version: "1.0.0"
+date-released: "2026-11-23"
+authors:
+  - family-names: "Nancy Noella"
+    given-names: "R S"
+    affiliation: "Sathyabama Institute of Science and Technology, Tamil Nadu, India"
+  - family-names: "Appadurai"
+    given-names: "Jothi Prabha"
+    affiliation: "Kakatiya Institute of Technology & Science, Warangal, India"
+  - family-names: "Atkar"
+    given-names: "Geeta Bhimrao"
+    affiliation: "G H Raisoni College of Engineering and Management, Pune, India"
+  - family-names: "Saju Raj"
+    given-names: "T"
+    affiliation: "Vel Tech Rangarajan Dr. Sagunthala R&D Institute of Science and Technology, Tamil Nadu, India"
+keywords:
+  - diabetic retinopathy
+  - retinal fundus image
+  - autoencoder
+  - handcrafted features
+  - principal component analysis
+  - XGBoost
+preferred-citation:
+  type: article
+  title: "A Hybrid Autoencoder-Based Feature Learning and XGBoost Framework for Early Detection and Classification of Diabetic Retinopathy Using Retinal Fundus Images"
+  authors:
+    - family-names: "Nancy Noella"
+      given-names: "R S"
+    - family-names: "Appadurai"
+      given-names: "Jothi Prabha"
+    - family-names: "Atkar"
+      given-names: "Geeta Bhimrao"
+    - family-names: "Saju Raj"
+      given-names: "T"
+  journal: "Scientific Reports"
+  status: "submitted"

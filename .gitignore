@@ -1,0 +1,18 @@
+# Datasets are not redistributed (see README.md, "Datasets")
+data/
+# Generated artefacts
+outputs/
+cache/
+smoke_workspace/
+*.keras
+*.h5
+*.joblib
+*.npz
+# Python
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.venv/
+venv/
+.env
+.DS_Store

@@ -1,0 +1,212 @@
+# =============================================================================
+# Hybrid Autoencoder + Handcrafted Features + XGBoost framework for
+# five-class diabetic retinopathy (DR) grading from retinal fundus images.
+#
+# Every hyperparameter used by the code is declared in this single file so that
+# the complete experimental configuration can be reported and reproduced
+# (Reviewer 1, comments 12 and 13). Any entry can be overridden from the
+# command line, e.g.:  python train_hybrid.py --set xgboost.max_depth=8
+# =============================================================================
+
+seed: 42                     # global seed (splits, augmentation, AE init, XGBoost)
+n_jobs: -1                   # CPU workers for feature extraction / sklearn models
+
+paths:
+  output_root: outputs       # all tables, figures, models and logs
+  cache_root: cache          # preprocessed images and feature banks
+
+# -----------------------------------------------------------------------------
+# Datasets. Labels follow the international clinical DR severity scale:
+# 0 = No DR, 1 = Mild NPDR, 2 = Moderate NPDR, 3 = Severe NPDR, 4 = PDR.
+# Images are NOT redistributed with this repository; see README.md.
+# -----------------------------------------------------------------------------
+datasets:
+  aptos:
+    enabled: true
+    label_csv: data/aptos2019/train.csv
+    image_dir: data/aptos2019/train_images
+    id_column: id_code
+    label_column: diagnosis
+    image_ext: .png
+    # APTOS 2019 provides no patient identifier -> image-level split, with
+    # perceptual-hash grouping of near-duplicate photographs (see split.*).
+    patient_id_regex: null
+    expected_counts: [1805, 370, 999, 193, 295]        # official train.csv, 3662 images
+  kaggle:
+    enabled: true
+    label_csv: data/kaggle_eyepacs/trainLabels.csv
+    image_dir: data/kaggle_eyepacs/train
+    id_column: image
+    label_column: level
+    image_ext: .jpeg
+    # EyePACS file names are "<patient>_left" / "<patient>_right" -> both eyes of
+    # one patient are kept in the same partition (patient-level split).
+    patient_id_regex: '^(\d+)_(?:left|right)$'
+    expected_counts: [25810, 2443, 5292, 873, 708]     # official trainLabels.csv, 35126 images
+
+# -----------------------------------------------------------------------------
+# Partitioning (performed on ORIGINAL images, before any augmentation)
+# -----------------------------------------------------------------------------
+split:
+  test_fraction: 0.20        # held-out test set, never used for fitting or tuning
+  val_fraction: 0.10         # validation set (AE early stopping, threshold + XGBoost tuning)
+  stratify: true             # StratifiedGroupKFold -> class proportions preserved
+  duplicate_grouping: true   # near-duplicate photographs share one group
+  phash_hamming_threshold: 6 # max pHash AND dHash distance (64-bit) for "same photograph"
+  phash_bands: 8             # LSH bands (guarantees recall for distance <= bands-1)
+
+# -----------------------------------------------------------------------------
+# Retinal fundus image preprocessing
+# -----------------------------------------------------------------------------
+preprocessing:
+  image_size: 224            # square output resolution (pixels)
+  crop_threshold: 7          # intensity threshold used to crop the black border
+  circular_mask: true        # restrict the image to the circular field of view (FOV)
+  wiener_window: 3           # Wiener filter window for noise reduction (0 disables)
+  clahe_clip_limit: 2.0      # CLAHE on the L channel (LAB) for contrast normalisation
+  clahe_tile_grid: 8
+  ben_graham_sigma: 0        # >0 enables local-average colour subtraction (Graham)
+
+# -----------------------------------------------------------------------------
+# Data augmentation — TRAINING PARTITION ONLY
+# -----------------------------------------------------------------------------
+augmentation:
+  enabled: true
+  balance_strategy: max      # 'max' -> raise each class towards the largest class
+  target_per_class: null     # integer overrides balance_strategy
+  max_aug_per_image: 8       # upper bound of synthetic copies generated per original
+  hflip_prob: 0.5
+  rotation_deg: 25.0         # uniform in [-deg, +deg]
+  brightness_delta: 0.15     # multiplicative factor in [1-d, 1+d]
+  contrast_range: [0.85, 1.15]
+
+# -----------------------------------------------------------------------------
+# Convolutional autoencoder (unsupervised representation learning)
+# -----------------------------------------------------------------------------
+autoencoder:
+  input_size: 128            # images are down-sampled to 128 x 128 x 3 for the AE
+  filters: [32, 64, 128, 256]  # encoder Conv2D blocks (stride 2) -> 8 x 8 x 256
+  kernel_size: 3
+  latent_dim: 256            # bottleneck dimension = length of the AE feature vector
+  activation: leaky_relu     # LeakyReLU(alpha=0.2) in hidden layers; sigmoid output
+  batch_norm: true
+  dropout: 0.20              # applied to the latent vector during training
+  l2: 1.0e-5                 # kernel L2 regularisation
+  loss: mse_ssim             # 'mse' or 'mse_ssim' (MSE + 0.2 * (1 - SSIM))
+  ssim_weight: 0.2
+  optimizer: adam
+  learning_rate: 1.0e-3
+  batch_size: 64
+  epochs: 60
+  early_stopping_patience: 8 # on validation reconstruction loss
+  reduce_lr_patience: 4
+  min_learning_rate: 1.0e-5
+
+# -----------------------------------------------------------------------------
+# Handcrafted descriptors
+# -----------------------------------------------------------------------------
+handcrafted:
+  channel: green             # green channel carries most lesion / vessel contrast
+  glcm_levels: 64            # grey-level quantisation for the GLCM
+  glcm_distances: [1, 2, 4]
+  glcm_angles_deg: [0, 45, 90, 135]
+  glcm_properties: [contrast, dissimilarity, homogeneity, energy, correlation, ASM]
+  hu_log_transform: true     # sign(h) * log10(|h|) for numerical stability
+
+# -----------------------------------------------------------------------------
+# Feature selection (Pearson) and dimensionality reduction (PCA)
+# Both are fitted on the training partition only and then applied unchanged.
+# -----------------------------------------------------------------------------
+feature_selection:
+  method: pearson
+  redundancy_threshold: 0.95       # drop one feature of every pair with |r| > threshold
+  threshold_grid: [0.80, 0.85, 0.90, 0.95, 0.98]   # searched on validation macro-F1
+  tune_threshold: true
+  min_relevance: 0.0               # optional: drop features with |r(feature, grade)| below this
+
+pca:
+  enabled: true
+  variance_retained: 0.95          # smallest number of components reaching this ratio
+  whiten: false
+
+# -----------------------------------------------------------------------------
+# Final classifier: XGBoost (the ONLY classifier of the proposed framework)
+# -----------------------------------------------------------------------------
+xgboost:
+  objective: multi:softprob
+  num_class: 5
+  n_estimators: 800
+  learning_rate: 0.05
+  max_depth: 6
+  min_child_weight: 1.0
+  subsample: 0.8
+  colsample_bytree: 0.8
+  gamma: 0.0
+  reg_lambda: 1.0
+  reg_alpha: 0.0
+  tree_method: hist
+  eval_metric: mlogloss
+  early_stopping_rounds: 50        # monitored on the validation partition
+  class_weighting: balanced        # inverse-frequency sample weights on the training set
+  tune: true                       # small validation grid search (test set untouched)
+  tuning_grid:
+    max_depth: [4, 6, 8]
+    learning_rate: [0.03, 0.05, 0.1]
+    min_child_weight: [1.0, 3.0]
+
+# -----------------------------------------------------------------------------
+# Comparison classifiers (same features, same partitions) — NOT part of the
+# proposed model; used for Table "classifier comparison and processing time".
+# -----------------------------------------------------------------------------
+comparison_classifiers: [logistic_regression, decision_tree, knn, naive_bayes, random_forest, svm, xgboost]
+
+# -----------------------------------------------------------------------------
+# Evaluation
+# -----------------------------------------------------------------------------
+evaluation:
+  bootstrap_iterations: 2000       # percentile bootstrap for 95% confidence intervals
+  confidence_level: 0.95
+  referable_classes: [2, 3, 4]     # moderate NPDR or worse = referable DR
+  timing_repeats: 5                # inference timing repetitions (median reported)
+
+repeated_cv:
+  n_splits: 5
+  n_repeats: 3                     # 5 x 3 = 15 train/test evaluations
+  retrain_autoencoder_per_fold: true
+  autoencoder_epochs: 30           # reduced AE budget inside CV folds
+  classifiers: [logistic_regression, random_forest, svm, xgboost]
+  alpha: 0.05
+
+# -----------------------------------------------------------------------------
+# Deep CNN baselines trained on the identical partitions
+# -----------------------------------------------------------------------------
+baselines:
+  models: [ResNet50, DenseNet121, EfficientNetB0, MobileNetV2]
+  weights: imagenet                # null -> random initialisation
+  image_size: 224
+  batch_size: 32
+  head_epochs: 5                   # stage 1: frozen backbone, train classification head
+  finetune_epochs: 25              # stage 2: unfreeze the top of the backbone
+  unfreeze_fraction: 0.30
+  head_learning_rate: 1.0e-3
+  finetune_learning_rate: 1.0e-4
+  dropout: 0.30
+  early_stopping_patience: 6
+  use_training_augmentation: true  # the same training-only augmented set as the proposed model
+
+# -----------------------------------------------------------------------------
+# Cross-dataset and external validation
+# -----------------------------------------------------------------------------
+cross_dataset:
+  pairs: [[aptos, kaggle], [kaggle, aptos]]
+  # Optional independent dataset with a compatible 5-grade scale, e.g. IDRiD
+  # (grades 0-4) or Messidor-2 with an ICDR-graded label file.
+  external:
+    enabled: false
+    name: idrid
+    label_csv: data/idrid/labels.csv
+    image_dir: data/idrid/images
+    id_column: image
+    label_column: grade
+    image_ext: .jpg
+    label_map: null                # e.g. {0: 0, 1: 1, 2: 2, 3: 3, 4: 4}

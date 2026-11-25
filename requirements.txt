@@ -1,0 +1,13 @@
+# Python 3.10 - 3.13. Tested with the versions in brackets.
+numpy>=1.26            # [2.5.3]
+pandas>=2.1            # [3.0.5]
+scipy>=1.11            # [1.18.1]
+scikit-learn>=1.4      # [1.9.1]
+scikit-image>=0.22     # [0.26.0]
+opencv-python-headless>=4.8   # [5.0.0]
+xgboost>=2.0           # [3.4.1]
+tensorflow>=2.16       # [2.21.0]  Keras 3 API; use tensorflow[and-cuda] on Linux GPUs
+matplotlib>=3.8        # [3.11.2]
+pyyaml>=6.0            # [6.0.3]
+joblib>=1.3            # [1.6.0]
+psutil>=5.9            # [7.2.2]
